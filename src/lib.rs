@@ -4,7 +4,6 @@ extern crate chrono;
 extern crate libc;
 extern crate log;
 extern crate parking_lot;
-extern crate rustc_serialize;
 
 mod spec;
 
@@ -20,7 +19,7 @@ const MAX_ENTRY_SIZE: usize = 1<<10;
 const BUF_SIZE: usize = 1<<20;
 
 /// The format of logged messages.
-#[derive(Debug, RustcDecodable)]
+#[derive(Debug)]
 pub enum Format {
     /// Log format modelled after the Google [glog](https://github.com/google/glog) library.
     /// Typical entry:
