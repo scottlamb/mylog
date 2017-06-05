@@ -242,7 +242,7 @@ impl Logger {
 
 impl log::Log for Logger {
     fn enabled(&self, metadata: &LogMetadata) -> bool {
-        self.spec.get_level(metadata.target()) <= metadata.level()
+        self.spec.get_level(metadata.target()) >= metadata.level()
     }
 
     fn log(&self, record: &LogRecord) {
