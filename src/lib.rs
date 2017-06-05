@@ -15,7 +15,7 @@ use std::mem;
 use std::sync::Arc;
 use std::thread;
 
-const MAX_ENTRY_SIZE: usize = 1<<10;
+const MAX_ENTRY_SIZE: usize = 1<<16;
 const BUF_SIZE: usize = 1<<20;
 
 /// The format of logged messages.
@@ -248,18 +248,17 @@ impl log::Log for Logger {
     fn log(&self, record: &LogRecord) {
         if !self.enabled(record.metadata()) { return; }
         let mut buf: [u8; MAX_ENTRY_SIZE] = unsafe { mem::uninitialized() };
-        let msg = {
+        let len = {
             let mut c = io::Cursor::new(&mut buf[.. MAX_ENTRY_SIZE-1]);
             match self.fmt.write(record, &mut c) {
                 Err(ref e) if e.kind() == io::ErrorKind::WriteZero => {},  // truncated. okay.
                 Err(_) => return,  // unable to write log entry. skip.
                 Ok(()) => {},
             }
-            let len = c.position() as usize;
-            let buf = c.into_inner();
-            buf[len] = b'\n';  // always terminate with a newline (even if truncated).
-            &buf[0 .. len+1]
+            c.position() as usize
         };
+        buf[len] = b'\n';  // always terminate with a newline (even if truncated).
+        let msg = &buf[0 .. len+1];
         let mut l = self.inner.lock();
 
         if !l.use_async {
