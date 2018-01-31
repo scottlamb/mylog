@@ -7,7 +7,7 @@ extern crate parking_lot;
 
 mod spec;
 
-use log::{LogRecord, LogLevel, LogMetadata};
+use log::{Record, Level, Metadata};
 use parking_lot::{Condvar, Mutex};
 use spec::Specification;
 use std::io::{self, Write};
@@ -64,53 +64,60 @@ pub enum Format {
 }
 
 impl Format {
-    fn write(&self, record: &LogRecord, c: &mut io::Cursor<&mut [u8]>) -> Result<(), io::Error> {
+    fn write(&self, record: &Record, c: &mut io::Cursor<&mut [u8]>) -> Result<(), io::Error> {
         match *self {
             Format::Google => Format::write_google(record, c),
             Format::GoogleSystemd => Format::write_google_systemd(record, c),
         }
     }
 
-    fn write_google(record: &LogRecord, c: &mut io::Cursor<&mut [u8]>) -> Result<(), io::Error> {
+    fn write_google(record: &Record, c: &mut io::Cursor<&mut [u8]>) -> Result<(), io::Error> {
         let level = match record.level() {
-            LogLevel::Error => "E",
-            LogLevel::Warn => "W",
-            LogLevel::Info => "I",
-            LogLevel::Debug => "D",
-            LogLevel::Trace => "T",
+            Level::Error => "E",
+            Level::Warn => "W",
+            Level::Info => "I",
+            Level::Debug => "D",
+            Level::Trace => "T",
         };
         const TIME_FORMAT: &'static str = "%m%d %H%M%S%.3f";
+        let p = record.module_path().unwrap_or("");
         if let Some(name) = thread::current().name() {
             write!(c, "{}{} {} {}] {}", level, chrono::Local::now().format(TIME_FORMAT), name,
-                   record.location().module_path(), record.args())
+                   p, record.args())
         } else {
             write!(c, "{}{} {} {}] {}", level, chrono::Local::now().format(TIME_FORMAT),
-                   unsafe { libc::getpid() }, record.location().module_path(), record.args())
+                   unsafe { libc::getpid() }, p, record.args())
         }
     }
 
-    fn write_google_systemd(record: &LogRecord, c: &mut io::Cursor<&mut [u8]>)
+    fn write_google_systemd(record: &Record, c: &mut io::Cursor<&mut [u8]>)
                           -> Result<(), io::Error> {
         let level = match record.level() {
-            LogLevel::Error => "<3>",  // SD_ERR
-            LogLevel::Warn  => "<4>",  // SD_WARNING
-            LogLevel::Info  => "<5>",  // SD_NOTICE
-            LogLevel::Debug => "<6>",  // SD_INFO
-            LogLevel::Trace => "<7>",  // SD_DEBUG
+            Level::Error => "<3>",  // SD_ERR
+            Level::Warn  => "<4>",  // SD_WARNING
+            Level::Info  => "<5>",  // SD_NOTICE
+            Level::Debug => "<6>",  // SD_INFO
+            Level::Trace => "<7>",  // SD_DEBUG
         };
+        let p = record.module_path().unwrap_or("");
         if let Some(name) = thread::current().name() {
-            write!(c, "{}{} {}] {}", level, name,
-                   record.location().module_path(), record.args())
+            write!(c, "{}{} {}] {}", level, name, p, record.args())
         } else {
-            write!(c, "{}{} {}] {}", level, unsafe { libc::getpid() },
-                   record.location().module_path(), record.args())
+            write!(c, "{}{} {}] {}", level, unsafe { libc::getpid() }, p, record.args())
         }
     }
+}
+
+#[derive(Debug)]
+pub enum Destination {
+    Stdout,
+    Stderr,
 }
 
 pub struct Builder {
     spec: Option<Specification>,
     fmt: Format,
+    dest: Destination,
 }
 
 impl Builder {
@@ -118,6 +125,7 @@ impl Builder {
         Builder{
             spec: None,
             fmt: Format::Google,
+            dest: Destination::Stderr,
         }
     }
 
@@ -131,6 +139,12 @@ impl Builder {
         self
     }
 
+    /// Sets the log destination; default is stderr.
+    pub fn set_destination(mut self, dest: Destination) -> Self {
+        self.dest = dest;
+        self
+    }
+
     pub fn build(self) -> Handle {
         Handle(Arc::new(Logger{
             inner: Mutex::new(LoggerInner {
@@ -141,6 +155,7 @@ impl Builder {
             wake_producers: Condvar::new(),
             spec: self.spec.unwrap_or_else(|| Specification::new("")),
             fmt: self.fmt,
+            dest: self.dest,
         }))
     }
 }
@@ -154,15 +169,15 @@ impl Handle {
     /// Installs this logger as the global logger used by the `log` crate.
     /// Can only be called once in the lifetime of the program.
     pub fn install(self) -> Result<(), log::SetLoggerError> {
-        unsafe {
-            let logger = self.0;
-            log::set_logger_raw(move |max_log_level| {
-                max_log_level.set(logger.spec.max);
-                let ptr: *const Logger = &*logger;
-                mem::forget(logger);  // leak.
-                ptr
-            })
-        }
+        let logger = self.0;
+
+        // Leak an instance of the Arc, so that the pointer lives forever.
+        // This allows transmuting it to 'static soundly.
+        let l = unsafe { ::std::mem::transmute::<&log::Log, &'static log::Log>(&*logger) };
+        log::set_logger(l)?;
+        log::set_max_level(logger.spec.max);
+        mem::forget(logger);
+        Ok(())
     }
 
     /// Enables asynchronous logging until the returned `AsyncHandle` is dropped.
@@ -208,6 +223,7 @@ struct Logger {
     wake_producers: Condvar,
     fmt: Format,
     spec: Specification,
+    dest: Destination,
 }
 
 struct LoggerInner {
@@ -216,6 +232,13 @@ struct LoggerInner {
 }
 
 impl Logger {
+    fn write_all(&self, buf: &[u8]) -> Result<(), io::Error> {
+        match self.dest {
+            Destination::Stderr => io::stderr().write_all(&buf),
+            Destination::Stdout => io::stdout().write_all(&buf),
+        }
+    }
+
     fn run_async(&self) {
         let mut buf = Vec::with_capacity(BUF_SIZE);
         let mut use_async = true;
@@ -234,18 +257,18 @@ impl Logger {
 
             // Write buf.
             if !buf.is_empty() {
-                let _ = io::stderr().write_all(&buf);
+                let _ = self.write_all(&buf);
             }
         }
     }
 }
 
 impl log::Log for Logger {
-    fn enabled(&self, metadata: &LogMetadata) -> bool {
+    fn enabled(&self, metadata: &Metadata) -> bool {
         self.spec.get_level(metadata.target()) >= metadata.level()
     }
 
-    fn log(&self, record: &LogRecord) {
+    fn log(&self, record: &Record) {
         if !self.enabled(record.metadata()) { return; }
         let mut buf: [u8; MAX_ENTRY_SIZE] = unsafe { mem::uninitialized() };
         let len = {
@@ -262,7 +285,7 @@ impl log::Log for Logger {
         let mut l = self.inner.lock();
 
         if !l.use_async {
-            let _ = io::stderr().write_all(msg);
+            let _ = self.write_all(msg);
             return;
         }
 
@@ -272,5 +295,14 @@ impl log::Log for Logger {
         }
         l.buf.extend_from_slice(msg);
         self.wake_consumer.notify_one();
+    }
+
+    fn flush(&self) {
+        let mut l = self.inner.lock();
+        if l.use_async {
+            while !l.buf.is_empty() {
+                self.wake_producers.wait(&mut l);
+            }
+        }
     }
 }
