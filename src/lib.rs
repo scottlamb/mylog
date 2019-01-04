@@ -23,7 +23,7 @@ const BUF_SIZE: usize = 1<<20;
 pub enum Format {
     /// Log format modelled after the Google [glog](https://github.com/google/glog) library.
     /// Typical entry:
-    /// ```
+    /// ```text
     /// I0308 213124.255 main moonfire_nvr] Success.
     /// Lmmdd HHMMSS.FFF TTTT PPPPPPPPPPPP] ...
     /// L    = level:
@@ -48,12 +48,12 @@ pub enum Format {
     /// [sd-daemon(3)](https://www.freedesktop.org/software/systemd/man/sd-daemon.html).
     /// The date and time are omitted; the prefix is replaced with one understood by systemd.
     /// Typical entry:
-    /// ```
+    /// ```text
     /// <5>main moonfire_nvr] Success.
     /// ```
     ///
     /// The supported log levels are as follows:
-    /// ```
+    /// ```text
     /// <3> = SD_ERR     = error!
     /// <4> = SD_WARNING = warn!
     /// <5> = SD_NOTICE  = info!
