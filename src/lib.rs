@@ -1,7 +1,6 @@
 //! A simple stderr-based logger which supports a couple formats and asynchronous operation.
 
 extern crate chrono;
-extern crate libc;
 extern crate log;
 extern crate parking_lot;
 
@@ -81,12 +80,13 @@ impl Format {
         };
         const TIME_FORMAT: &'static str = "%m%d %H%M%S%.3f";
         let p = record.module_path().unwrap_or("");
-        if let Some(name) = thread::current().name() {
+        let t = thread::current();
+        if let Some(name) = t.name() {
             write!(c, "{}{} {} {}] {}", level, chrono::Local::now().format(TIME_FORMAT), name,
                    p, record.args())
         } else {
-            write!(c, "{}{} {} {}] {}", level, chrono::Local::now().format(TIME_FORMAT),
-                   unsafe { libc::getpid() }, p, record.args())
+            write!(c, "{}{} {:?} {}] {}", level, chrono::Local::now().format(TIME_FORMAT),
+                   t.id(), p, record.args())
         }
     }
 
@@ -100,10 +100,11 @@ impl Format {
             Level::Trace => "<7>",  // SD_DEBUG
         };
         let p = record.module_path().unwrap_or("");
-        if let Some(name) = thread::current().name() {
+        let t = thread::current();
+        if let Some(name) = t.name() {
             write!(c, "{}{} {}] {}", level, name, p, record.args())
         } else {
-            write!(c, "{}{} {}] {}", level, unsafe { libc::getpid() }, p, record.args())
+            write!(c, "{}{:?} {}] {}", level, t.id(), p, record.args())
         }
     }
 }
