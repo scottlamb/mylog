@@ -12,9 +12,11 @@ pub struct Specification {
 
 impl Specification {
     pub fn new(spec: &str) -> Self {
-        let mut v: Vec<(LevelFilter, String)> = Vec::new();
+        let mut directives: Vec<(LevelFilter, String)> = Vec::new();
         for d in spec.split(',') {
-            if d.is_empty() { continue; }
+            if d.is_empty() {
+                continue;
+            }
             let mut parts = d.splitn(2, '=');
             let (level, prefix) = match (parts.next(), parts.next()) {
                 (Some(p), None) => match p.parse() {
@@ -24,27 +26,31 @@ impl Specification {
                 (Some(p), Some(l)) => match l.parse() {
                     Ok(l) => (l, p.to_owned()),
                     Err(_) => {
-                        let _ = writeln!(io::stderr(),
-                                         "logging directive {:?} has unparseable log level", d);
+                        let _ = writeln!(
+                            io::stderr(),
+                            "logging directive {:?} has unparseable log level",
+                            d
+                        );
                         continue;
-                    },
+                    }
                 },
                 (None, _) => unreachable!(),
             };
-            v.push((level, prefix));
+            directives.push((level, prefix));
         }
 
-        if v.is_empty() {
-            v.push((LevelFilter::Error, String::new()));
+        if directives.is_empty() {
+            directives.push((LevelFilter::Error, String::new()));
         }
 
         // Sort the prefixes: longest to shortest.
-        v.sort_by_key(|&(_, ref p)| usize::max_value() - p.len());
-        let max = v.iter().map(|&(level, _)| level).max().unwrap_or(LevelFilter::Off);
-        Specification {
-            directives: v,
-            max: max,
-        }
+        directives.sort_by_key(|&(_, ref p)| usize::max_value() - p.len());
+        let max = directives
+            .iter()
+            .map(|&(level, _)| level)
+            .max()
+            .unwrap_or(LevelFilter::Off);
+        Specification { directives, max }
     }
 
     pub fn get_level(&self, module: &str) -> LevelFilter {
@@ -59,8 +65,8 @@ impl Specification {
 
 #[cfg(test)]
 mod tests {
-    use log::LevelFilter;
     use super::Specification;
+    use log::LevelFilter;
 
     #[test]
     fn default() {
@@ -75,7 +81,10 @@ mod tests {
         assert_eq!(spec.max, LevelFilter::Trace);
         assert_eq!(spec.get_level("crate1"), LevelFilter::Off);
         assert_eq!(spec.get_level("crate2::something"), LevelFilter::Warn);
-        assert_eq!(spec.get_level("crate2::inner::something"), LevelFilter::Trace);
+        assert_eq!(
+            spec.get_level("crate2::inner::something"),
+            LevelFilter::Trace
+        );
         assert_eq!(spec.get_level("crate3"), LevelFilter::Trace);
         assert_eq!(spec.get_level("crate4"), LevelFilter::Info);
     }
