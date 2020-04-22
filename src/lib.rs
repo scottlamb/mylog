@@ -74,6 +74,18 @@ pub enum Format {
     GoogleSystemd,
 }
 
+impl std::str::FromStr for Format {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "google" => Ok(Format::Google),
+            "google-systemd" => Ok(Format::GoogleSystemd),
+            _ => Err(()),
+        }
+    }
+}
+
 impl Format {
     fn write(
         &self,
