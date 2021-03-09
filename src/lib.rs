@@ -35,14 +35,15 @@ pub enum Format {
     /// Log format modelled after the Google [glog](https://github.com/google/glog) library.
     /// Typical entry:
     /// ```text
-    /// I0308 213124.255 main moonfire_nvr] Success.
-    /// Lmmdd HHMMSS.FFF TTTT PPPPPPPPPPPP] ...
+    /// I20210308 21:31:24.255 main moonfire_nvr] Success.
+    /// LYYYYmmdd HH:MM:SS.FFF TTTT PPPPPPPPPPPP] ...
     /// L    = level:
     ///        E = error!
     ///        W = warn!
     ///        I = info!
     ///        D = debug!
     ///        T = trace!
+    /// YYYY = year
     /// mm   = month
     /// dd   = day
     /// HH   = hour (using a 24-hour clock)
@@ -109,7 +110,7 @@ impl Format {
             Level::Debug => "D",
             Level::Trace => "T",
         };
-        const TIME_FORMAT: &str = "%m%d %H%M%S%.3f";
+        const TIME_FORMAT: &str = "%Y%m%d %H:%M:%S%.3f";
         let p = record.module_path().unwrap_or("");
         let t = thread::current();
         if let Some(name) = t.name() {
