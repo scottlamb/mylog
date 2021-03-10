@@ -30,9 +30,11 @@ const MAX_ENTRY_SIZE: usize = 1 << 16;
 const ASYNC_BUF_SIZE: usize = 1 << 20;
 
 /// The format of logged messages.
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum Format {
     /// Log format modelled after the Google [glog](https://github.com/google/glog) library.
+    ///
+    /// This log format honors `ColorMode`.
     /// Typical entry:
     /// ```text
     /// I20210308 21:31:24.255 main moonfire_nvr] Success.
@@ -48,7 +50,7 @@ pub enum Format {
     /// dd   = day
     /// HH   = hour (using a 24-hour clock)
     /// MM   = minute
-    /// SS   = section
+    /// SS   = second
     /// FFF  = fractional portion of the second
     /// TTTT = thread name (if set) or tid (otherwise)
     /// PPPP = module path
@@ -56,9 +58,12 @@ pub enum Format {
     /// ```
     Google,
 
-    /// Google log format, adapted for systemd output. See
-    /// [sd-daemon(3)](https://www.freedesktop.org/software/systemd/man/sd-daemon.html).
+    /// Google log format, adapted for systemd output.
+    ///
+    /// See [sd-daemon(3)](https://www.freedesktop.org/software/systemd/man/sd-daemon.html).
     /// The date and time are omitted; the prefix is replaced with one understood by systemd.
+    /// This log format ignores `ColorMode`.
+
     /// Typical entry:
     /// ```text
     /// <5>main moonfire_nvr] Success.
@@ -90,25 +95,30 @@ impl std::str::FromStr for Format {
 impl Format {
     fn write(
         &self,
+        use_color: bool,
         record: &Record,
         buf: &mut EntryBuf<entry_buf::Writing>,
     ) -> Result<(), std::fmt::Error> {
         match *self {
-            Format::Google => Format::write_google(record, buf),
+            Format::Google => Format::write_google(use_color, record, buf),
             Format::GoogleSystemd => Format::write_google_systemd(record, buf),
         }
     }
 
     fn write_google(
+        use_color: bool,
         record: &Record,
         buf: &mut EntryBuf<entry_buf::Writing>,
     ) -> Result<(), std::fmt::Error> {
-        let level = match record.level() {
-            Level::Error => "E",
-            Level::Warn => "W",
-            Level::Info => "I",
-            Level::Debug => "D",
-            Level::Trace => "T",
+        const RESET_CODE: &str = "\x1b[0m";
+        let (prefix, suffix) = match (record.level(), use_color) {
+            (Level::Error, true) => ("\x1b[31;1mE", RESET_CODE), // bright red
+            (Level::Error, false) => ("E", ""),
+            (Level::Warn, true) => ("\x1b[33;1mW", RESET_CODE), // bright yellow
+            (Level::Warn, false) => ("W", ""),
+            (Level::Info, _) => ("I", ""),
+            (Level::Debug, _) => ("D", ""),
+            (Level::Trace, _) => ("T", ""),
         };
         const TIME_FORMAT: &str = "%Y%m%d %H:%M:%S%.3f";
         let p = record.module_path().unwrap_or("");
@@ -116,22 +126,24 @@ impl Format {
         if let Some(name) = t.name() {
             write!(
                 buf,
-                "{}{} {} {}] {}",
-                level,
+                "{}{} {} {}] {}{}",
+                prefix,
                 chrono::Local::now().format(TIME_FORMAT),
                 name,
                 p,
-                record.args()
+                record.args(),
+                suffix
             )
         } else {
             write!(
                 buf,
-                "{}{} {:?} {}] {}",
-                level,
+                "{}{} {:?} {}] {}{}",
+                prefix,
                 chrono::Local::now().format(TIME_FORMAT),
                 t.id(),
                 p,
-                record.args()
+                record.args(),
+                suffix
             )
         }
     }
@@ -157,16 +169,43 @@ impl Format {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum Destination {
     Stderr,
     Stdout,
+}
+
+/// Whether to use color.
+#[derive(Debug, Eq, PartialEq)]
+pub enum ColorMode {
+    /// Always use color.
+    On,
+
+    /// Never use color.
+    Off,
+
+    /// Use color if destination is a terminal.
+    Auto,
+}
+
+impl std::str::FromStr for ColorMode {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "off" => Ok(ColorMode::Off),
+            "on" => Ok(ColorMode::On),
+            "auto" => Ok(ColorMode::Auto),
+            _ => Err(()),
+        }
+    }
 }
 
 pub struct Builder {
     spec: Option<Specification>,
     fmt: Format,
     dest: Destination,
+    color: ColorMode,
 }
 
 impl Builder {
@@ -175,6 +214,7 @@ impl Builder {
             spec: None,
             fmt: Format::Google,
             dest: Destination::Stderr,
+            color: ColorMode::Auto,
         }
     }
 
@@ -194,7 +234,25 @@ impl Builder {
         self
     }
 
+    /// Sets color mode; default is auto.
+    pub fn set_color(mut self, color: ColorMode) -> Self {
+        self.color = color;
+        self
+    }
+
     pub fn build(self) -> Handle {
+        let use_color = if self.fmt == Format::GoogleSystemd || self.color == ColorMode::Off {
+            false
+        } else if self.color == ColorMode::On {
+            true
+        } else {
+            let fd = match self.dest {
+                Destination::Stderr => 2,
+                Destination::Stdout => 1,
+            };
+            unsafe { libc::isatty(fd) == 1 }
+        };
+
         Handle(Arc::new(Logger {
             inner: Mutex::new(LoggerInner {
                 async_buf: Vec::with_capacity(ASYNC_BUF_SIZE),
@@ -205,6 +263,7 @@ impl Builder {
             spec: self.spec.unwrap_or_else(|| Specification::new("")),
             fmt: self.fmt,
             dest: self.dest,
+            use_color,
         }))
     }
 }
@@ -281,6 +340,7 @@ struct Logger {
     fmt: Format,
     spec: Specification,
     dest: Destination,
+    use_color: bool,
 }
 
 struct LoggerInner {
@@ -340,7 +400,7 @@ impl log::Log for Logger {
         let mut buf = EntryBuf::new();
 
         // Write as much as fits; ignore truncation, which is the only possible error.
-        let _ = self.fmt.write(record, &mut buf);
+        let _ = self.fmt.write(self.use_color, record, &mut buf);
         let buf = buf.terminate();
         let buf = buf.get();
 
