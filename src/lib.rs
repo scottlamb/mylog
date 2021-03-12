@@ -178,10 +178,10 @@ pub enum Destination {
 #[derive(Debug, Eq, PartialEq)]
 pub enum ColorMode {
     /// Always use color.
-    On,
+    Always,
 
     /// Never use color.
-    Off,
+    Never,
 
     /// Use color if destination is a terminal.
     Auto,
@@ -192,8 +192,8 @@ impl std::str::FromStr for ColorMode {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "off" => Ok(ColorMode::Off),
-            "on" => Ok(ColorMode::On),
+            "never" | "off" | "no" | "false" => Ok(ColorMode::Never),
+            "always" | "on" | "yes" | "true" => Ok(ColorMode::Always),
             "auto" => Ok(ColorMode::Auto),
             _ => Err(()),
         }
@@ -240,9 +240,9 @@ impl Builder {
     }
 
     pub fn build(self) -> Handle {
-        let use_color = if self.fmt == Format::GoogleSystemd || self.color == ColorMode::Off {
+        let use_color = if self.fmt == Format::GoogleSystemd || self.color == ColorMode::Never {
             false
-        } else if self.color == ColorMode::On {
+        } else if self.color == ColorMode::Always {
             true
         } else {
             let fd = match self.dest {
