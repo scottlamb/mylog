@@ -53,7 +53,7 @@ pub enum Format {
     /// SS   = second
     /// FFF  = fractional portion of the second
     /// TTTT = thread name (if set) or tid (otherwise)
-    /// PPPP = module path
+    /// PPPP = log target (usually a module path)
     /// ...  = the message supplied to the log macro.
     /// ```
     Google,
@@ -121,7 +121,6 @@ impl Format {
             (Level::Trace, _) => ("T", ""),
         };
         const TIME_FORMAT: &str = "%Y%m%d %H:%M:%S%.3f";
-        let p = record.module_path().unwrap_or("");
         let t = thread::current();
         if let Some(name) = t.name() {
             write!(
@@ -130,7 +129,7 @@ impl Format {
                 prefix,
                 chrono::Local::now().format(TIME_FORMAT),
                 name,
-                p,
+                record.metadata().target(),
                 record.args(),
                 suffix
             )
@@ -141,7 +140,7 @@ impl Format {
                 prefix,
                 chrono::Local::now().format(TIME_FORMAT),
                 t.id(),
-                p,
+                record.metadata().target(),
                 record.args(),
                 suffix
             )
@@ -159,7 +158,7 @@ impl Format {
             Level::Debug => "<6>", // SD_INFO
             Level::Trace => "<7>", // SD_DEBUG
         };
-        let p = record.module_path().unwrap_or("");
+        let p = record.metadata().target();
         let t = thread::current();
         if let Some(name) = t.name() {
             write!(buf, "{}{} {}] {}", level, name, p, record.args())
