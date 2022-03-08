@@ -11,7 +11,7 @@ jobs:
       matrix:
         rust:
           - stable
-          - 1.45.0
+          - 1.49.0
     runs-on: ubuntu-20.04
     steps:
     - name: Checkout
