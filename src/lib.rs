@@ -5,11 +5,10 @@ mod spec;
 
 use crate::entry_buf::EntryBuf;
 use log::{Level, Metadata, Record};
-use parking_lot::{Condvar, Mutex};
 use spec::Specification;
 use std::fmt::Write as _;
 use std::io::Write as _;
-use std::sync::Arc;
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 
 /// The maximum number of bytes of a single log entry including the trailing `\n`.
@@ -298,7 +297,7 @@ impl Handle {
     /// been buffered.
     pub fn async_scope(&mut self) -> AsyncHandle {
         let was_async = {
-            let mut l = self.0.inner.lock();
+            let mut l = self.0.inner.lock().unwrap();
             std::mem::replace(&mut l.use_async, true)
         };
         assert!(!was_async);
@@ -323,7 +322,7 @@ pub struct AsyncHandle<'a> {
 impl<'a> Drop for AsyncHandle<'a> {
     fn drop(&mut self) {
         let was_async = {
-            let mut l = self.logger.0.inner.lock();
+            let mut l = self.logger.0.inner.lock().unwrap();
             self.logger.0.wake_consumer.notify_one();
             std::mem::replace(&mut l.use_async, false)
         };
@@ -365,9 +364,9 @@ impl Logger {
         while use_async {
             // Swap logger's async_buf (which has bytes to write) with an empty buf.
             {
-                let mut l = self.inner.lock();
+                let mut l = self.inner.lock().unwrap();
                 if l.async_buf.is_empty() && l.use_async {
-                    self.wake_consumer.wait(&mut l);
+                    l = self.wake_consumer.wait(l).unwrap();
                 }
                 use_async = l.use_async;
                 buf.clear();
@@ -403,7 +402,7 @@ impl log::Log for Logger {
         let buf = buf.terminate();
         let buf = buf.get();
 
-        let mut l = self.inner.lock();
+        let mut l = self.inner.lock().unwrap();
 
         if !l.use_async {
             let _ = self.write_all(buf);
@@ -414,17 +413,17 @@ impl log::Log for Logger {
         // Theoretically a large entry could be starved by shorter entries, but it seems unlikely
         // to be problematic.
         while l.async_buf.len() + buf.len() > ASYNC_BUF_SIZE {
-            self.wake_producers.wait(&mut l);
+            l = self.wake_producers.wait(l).unwrap();
         }
         l.async_buf.extend_from_slice(buf);
         self.wake_consumer.notify_one();
     }
 
     fn flush(&self) {
-        let mut l = self.inner.lock();
+        let mut l = self.inner.lock().unwrap();
         if l.use_async {
             while !l.async_buf.is_empty() {
-                self.wake_producers.wait(&mut l);
+                l = self.wake_producers.wait(l).unwrap();
             }
         }
     }
