@@ -353,8 +353,8 @@ impl Logger {
     /// When operating synchronously, called directly from `log`.
     fn write_all(&self, buf: &[u8]) -> Result<(), std::io::Error> {
         match self.dest {
-            Destination::Stderr => std::io::stderr().write_all(&buf),
-            Destination::Stdout => std::io::stdout().write_all(&buf),
+            Destination::Stderr => std::io::stderr().write_all(buf),
+            Destination::Stdout => std::io::stdout().write_all(buf),
         }
     }
 
