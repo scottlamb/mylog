@@ -3,9 +3,9 @@ name = "mylog"
 version = "0.1.0"
 authors = ["Scott Lamb <slamb@slamb.org>"]
 edition = "2018"
-rust-version = "1.49.0"
+rust-version = "1.70.0"
 
 [dependencies]
-chrono = "0.4.7"
+jiff = { version = "0.1.8", features = ["tz-system"] }
 libc = "0.2"
 log = "0.4.7"

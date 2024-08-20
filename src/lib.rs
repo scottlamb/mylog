@@ -91,6 +91,10 @@ impl std::str::FromStr for Format {
     }
 }
 
+fn local_time() -> jiff::civil::DateTime {
+    jiff::tz::TimeZone::system().to_datetime(jiff::Timestamp::now())
+}
+
 impl Format {
     fn write(
         &self,
@@ -126,7 +130,7 @@ impl Format {
                 buf,
                 "{}{} {} {}] {}{}",
                 prefix,
-                chrono::Local::now().format(TIME_FORMAT),
+                local_time().strftime(TIME_FORMAT),
                 name,
                 record.metadata().target(),
                 record.args(),
@@ -137,7 +141,7 @@ impl Format {
                 buf,
                 "{}{} {:?} {}] {}{}",
                 prefix,
-                chrono::Local::now().format(TIME_FORMAT),
+                local_time().strftime(TIME_FORMAT),
                 t.id(),
                 record.metadata().target(),
                 record.args(),
