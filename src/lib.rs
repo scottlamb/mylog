@@ -16,8 +16,8 @@ use std::thread;
 /// Must be at least one (to fit the trailing `\n`) and must fit within the program stack.
 /// Thus it can be safely assumed it is less than `isize::max()` as well.
 ///
-/// If a log call tries to write more than this size, the entry will be truncated. Truncated
-/// entries may have an invalid UTF-8 sequence but will always end in `\n`.
+/// If a log call tries to write more than this size, the entry will be truncated at a UTF-8
+/// boundary. Truncated entries will always end in `\n`.
 const MAX_ENTRY_SIZE: usize = 1 << 16;
 
 /// The size of the (heap-allocated) asynchronous buffer.
@@ -208,6 +208,7 @@ pub struct Builder {
     fmt: Format,
     dest: Destination,
     color: ColorMode,
+    is_test: bool,
 }
 
 impl Builder {
@@ -217,26 +218,41 @@ impl Builder {
             fmt: Format::Google,
             dest: Destination::Stderr,
             color: ColorMode::Auto,
+            is_test: false,
         }
     }
 
+    #[inline]
     pub fn set_format(mut self, fmt: Format) -> Self {
         self.fmt = fmt;
         self
     }
 
+    #[inline]
     pub fn set_spec(mut self, spec: &str) -> Self {
         self.spec = Some(Specification::new(spec));
         self
     }
 
+    /// If true, use the `print!` and `eprint!` macros instead of `std::io::stdout` and `std::io::stderr`,
+    /// and always write synchronously.
+    ///
+    /// This allows Rust's `libtest` to capture the output of tests.
+    #[inline]
+    pub fn set_test(mut self, is_test: bool) -> Self {
+        self.is_test = is_test;
+        self
+    }
+
     /// Sets the log destination; default is stderr.
+    #[inline]
     pub fn set_destination(mut self, dest: Destination) -> Self {
         self.dest = dest;
         self
     }
 
     /// Sets color mode; default is auto.
+    #[inline]
     pub fn set_color(mut self, color: ColorMode) -> Self {
         self.color = color;
         self
@@ -266,6 +282,7 @@ impl Builder {
             fmt: self.fmt,
             dest: self.dest,
             use_color,
+            is_test: self.is_test,
         }))
     }
 }
@@ -343,6 +360,7 @@ struct Logger {
     spec: Specification,
     dest: Destination,
     use_color: bool,
+    is_test: bool,
 }
 
 struct LoggerInner {
@@ -380,7 +398,7 @@ impl Logger {
 
             // Write buf.
             if !buf.is_empty() {
-                // This can throw an error, but what are going to do, log it? Discard.
+                // This can throw an error, but what are we going to do, log it? Discard.
                 let _ = self.write_all(&buf);
             }
         }
@@ -408,8 +426,14 @@ impl log::Log for Logger {
 
         let mut l = self.inner.lock().unwrap();
 
-        if !l.use_async {
-            let _ = self.write_all(buf);
+        if self.is_test {
+            match self.dest {
+                Destination::Stderr => eprint!("{}", buf),
+                Destination::Stdout => print!("{}", buf),
+            }
+            return;
+        } else if !l.use_async {
+            let _ = self.write_all(buf.as_bytes());
             return;
         }
 
@@ -419,7 +443,7 @@ impl log::Log for Logger {
         while l.async_buf.len() + buf.len() > ASYNC_BUF_SIZE {
             l = self.wake_producers.wait(l).unwrap();
         }
-        l.async_buf.extend_from_slice(buf);
+        l.async_buf.extend_from_slice(buf.as_bytes());
         self.wake_consumer.notify_one();
     }
 
