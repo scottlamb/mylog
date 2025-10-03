@@ -223,13 +223,13 @@ impl Builder {
     }
 
     #[inline]
-    pub fn set_format(mut self, fmt: Format) -> Self {
+    pub fn format(mut self, fmt: Format) -> Self {
         self.fmt = fmt;
         self
     }
 
     #[inline]
-    pub fn set_spec(mut self, spec: &str) -> Self {
+    pub fn spec(mut self, spec: &str) -> Self {
         self.spec = Some(Specification::new(spec));
         self
     }
@@ -239,21 +239,21 @@ impl Builder {
     ///
     /// This allows Rust's `libtest` to capture the output of tests.
     #[inline]
-    pub fn set_test(mut self, is_test: bool) -> Self {
+    pub fn is_test(mut self, is_test: bool) -> Self {
         self.is_test = is_test;
         self
     }
 
     /// Sets the log destination; default is stderr.
     #[inline]
-    pub fn set_destination(mut self, dest: Destination) -> Self {
+    pub fn destination(mut self, dest: Destination) -> Self {
         self.dest = dest;
         self
     }
 
     /// Sets color mode; default is auto.
     #[inline]
-    pub fn set_color(mut self, color: ColorMode) -> Self {
+    pub fn color(mut self, color: ColorMode) -> Self {
         self.color = color;
         self
     }
