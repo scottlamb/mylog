@@ -44,7 +44,7 @@ impl Specification {
         }
 
         // Sort the prefixes: longest to shortest.
-        directives.sort_by_key(|&(_, ref p)| usize::max_value() - p.len());
+        directives.sort_by_key(|(_, ref p)| usize::MAX - p.len());
         let max = directives
             .iter()
             .map(|&(level, _)| level)

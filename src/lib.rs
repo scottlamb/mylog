@@ -299,7 +299,7 @@ impl Handle {
     /// Typically this is called during `main` and held until shortly before returning to the OS.
     /// During asynchronous mode, logging calls will not block for I/O until at least 1 MiB has
     /// been buffered.
-    pub fn async_scope(&mut self) -> AsyncHandle {
+    pub fn async_scope(&mut self) -> AsyncHandle<'_> {
         let was_async = {
             let mut l = self.0.inner.lock().unwrap();
             std::mem::replace(&mut l.use_async, true)
