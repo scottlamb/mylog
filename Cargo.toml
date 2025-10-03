@@ -6,6 +6,6 @@ edition = "2018"
 rust-version = "1.70.0"
 
 [dependencies]
-jiff = { version = "0.1.8", features = ["tz-system"] }
+jiff = { version = "0.2.1", features = ["tz-system"] }
 libc = "0.2"
 log = "0.4.7"
